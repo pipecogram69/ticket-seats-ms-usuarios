@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Panel</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="card wide">
+    <div class="header">
+      <h1>🎟️ Mi panel</h1>
+      <span class="badge" id="rol"></span>
+    </div>
+    <p class="sub" id="saludo"></p>
+
+    <div class="info">
+      <div><b>Correo:</b> <span id="email"></span></div>
+      <div><b>Teléfono:</b> <span id="telefono"></span></div>
+      <div><b>Estado:</b> <span id="estado"></span></div>
+    </div>
+
+    <div id="contenido-rol" class="section"></div>
+
+    <div id="admin" class="section" style="display:none">
+      <h1 style="font-size:18px">Crear usuario</h1>
+      <p class="sub">Solo visible para ADMIN</p>
+      <form id="form-crear">
+        <div class="row">
+          <div><label>Nombre</label><input id="c-nombre" required minlength="2"></div>
+          <div><label>Apellido</label><input id="c-apellido" required minlength="2"></div>
+        </div>
+        <label>Correo</label>
+        <input type="email" id="c-email" required>
+        <div class="row">
+          <div><label>Contraseña</label><input type="password" id="c-password" required minlength="8" maxlength="72"></div>
+          <div>
+            <label>Rol</label>
+            <select id="c-rol">
+              <option>CLIENTE</option>
+              <option>ORGANIZADOR</option>
+              <option>VALIDADOR</option>
+              <option>ADMIN</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit">Crear usuario</button>
+      </form>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <button class="sec" onclick="cerrarSesion()">Cerrar sesión</button>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const textos = {
+      ADMIN: "Eres administrador: puedes crear usuarios con cualquier rol.",
+      ORGANIZADOR: "Aquí gestionarás tus eventos y localidades (próximo microservicio).",
+      CLIENTE: "Aquí verás tus reservas y compras de boletas (próximo microservicio).",
+      VALIDADOR: "Aquí validarás las boletas en el ingreso al evento (próximo microservicio).",
+    };
+
+    async function cargar() {
+      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
+      try {
+        const u = await api("/auth/me");
+        document.getElementById("rol").textContent = u.rol;
+        document.getElementById("saludo").textContent = "Hola, " + u.nombre + " " + u.apellido;
+        document.getElementById("email").textContent = u.email;
+        document.getElementById("telefono").textContent = u.telefono || "—";
+        document.getElementById("estado").textContent = u.estado;
+        document.getElementById("contenido-rol").textContent = textos[u.rol] || "";
+        if (u.rol === "ADMIN") document.getElementById("admin").style.display = "block";
+      } catch (err) {
+        if (err.status === 401) cerrarSesion();
+      }
+    }
+
+    document.getElementById("form-crear").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("msg");
+      try {
+        const u = await api("/usuarios", "POST", {
+          nombre: document.getElementById("c-nombre").value,
+          apellido: document.getElementById("c-apellido").value,
+          email: document.getElementById("c-email").value,
+          password: document.getElementById("c-password").value,
+          rol: document.getElementById("c-rol").value,
+        });
+        mostrar(msg, "Usuario creado: " + u.email + " (" + u.rol + ")", "ok");
+        e.target.reset();
+      } catch (err) {
+        mostrar(msg, err.message, "error");
+      }
+    });
+
+    cargar();
+  </script>
+</body>
+</html>

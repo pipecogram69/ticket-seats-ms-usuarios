@@ -1,0 +1,2 @@
+Admin12345 = contraseña
+admin@ticketseats.com = correo administrador 

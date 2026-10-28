@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+asyncpg
+bcrypt
+PyJWT
+pydantic[email]

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Registro</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="card">
+    <h1>Crear cuenta</h1>
+    <p class="sub">Regístrate como cliente</p>
+
+    <form id="form">
+      <div class="row">
+        <div><label>Nombre</label><input id="nombre" required minlength="2"></div>
+        <div><label>Apellido</label><input id="apellido" required minlength="2"></div>
+      </div>
+      <label>Correo</label>
+      <input type="email" id="email" required>
+      <label>Teléfono (opcional)</label>
+      <input id="telefono">
+      <label>Contraseña (mínimo 8 caracteres)</label>
+      <input type="password" id="password" required minlength="8" maxlength="72">
+      <button type="submit">Registrarme</button>
+    </form>
+
+    <div id="msg" class="msg"></div>
+    <p class="link">¿Ya tienes cuenta? <a href="/static/login.html">Inicia sesión</a></p>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("msg");
+      const tel = document.getElementById("telefono").value.trim();
+      try {
+        await api("/auth/registro", "POST", {
+          nombre: document.getElementById("nombre").value,
+          apellido: document.getElementById("apellido").value,
+          email: document.getElementById("email").value,
+          telefono: tel || null,
+          password: document.getElementById("password").value,
+        });
+        mostrar(msg, "Cuenta creada. Redirigiendo al login...", "ok");
+        setTimeout(() => location.href = "/static/login.html", 1500);
+      } catch (err) {
+        mostrar(msg, err.message, "error");
+      }
+    });
+  </script>
+</body>
+</html>
