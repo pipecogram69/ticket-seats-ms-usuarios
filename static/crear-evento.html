@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Crear evento</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { align-items: flex-start; }
+    .loc-row { display: grid; grid-template-columns: 2fr 1.3fr 1fr 1fr auto; gap: 6px; margin-top: 8px; }
+    .loc-row button { margin: 0; width: auto; padding: 8px 12px; }
+    .hint { font-size: 12px; color: #6b7280; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:760px">
+    <div class="header"><h1>Crear evento</h1><a href="/static/eventos.html">← Eventos</a></div>
+    <p class="sub">El evento se guarda en el shard de la ciudad del escenario.</p>
+
+    <form id="form">
+      <label>Escenario</label>
+      <select id="venue" required></select>
+      <label>Nombre</label>
+      <input id="nombre" required minlength="3">
+      <label>Descripción</label>
+      <input id="descripcion">
+      <label>Fecha y hora</label>
+      <input type="datetime-local" id="fecha" required>
+
+      <div class="section">
+        <b>Localidades</b>
+        <p class="hint">Nombre · Precio · Filas (máx. 26) · Asientos por fila. Se genera una boleta por asiento.</p>
+        <div id="locs"></div>
+        <button type="button" class="sec" id="add" style="width:auto;padding:6px 12px;margin-top:10px">+ Agregar localidad</button>
+      </div>
+
+      <div class="section">
+        <b>Condiciones comerciales</b>
+        <div class="row">
+          <div><label>Máx. boletas por compra</label><input type="number" id="maxb" value="6" min="1" max="20"></div>
+          <div><label>Minutos de reserva</label><input type="number" id="mins" value="10" min="1" max="60"></div>
+        </div>
+        <div class="row">
+          <div><label>Cargo de servicio (%)</label><input type="number" id="cargo" value="0" min="0" max="100" step="0.01"></div>
+          <div><label>Publicar al crear</label>
+            <select id="publicar"><option value="true">Sí</option><option value="false">No (borrador)</option></select></div>
+        </div>
+      </div>
+
+      <button type="submit">Crear evento</button>
+    </form>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const msg = document.getElementById("msg");
+    const locs = document.getElementById("locs");
+
+    function agregarLoc(nombre = "", precio = 50000, filas = 5, asientos = 10) {
+      const fila = h("div", { class: "loc-row" },
+        h("input", { class: "l-nombre", placeholder: "Nombre", value: nombre }),
+        h("input", { class: "l-precio", type: "number", min: "0", value: precio }),
+        h("input", { class: "l-filas", type: "number", min: "1", max: "26", value: filas }),
+        h("input", { class: "l-asientos", type: "number", min: "1", max: "100", value: asientos }),
+        h("button", { type: "button", class: "sec", onclick: () => fila.remove() }, "✕"));
+      locs.append(fila);
+    }
+
+    async function iniciar() {
+      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
+      if (!["ORGANIZADOR", "ADMIN"].includes(localStorage.getItem("rol"))) return location.href = "/static/eventos.html";
+      try {
+        const vs = await apiEv("/venues");
+        const sel = document.getElementById("venue");
+        for (const v of vs) sel.add(new Option(`${v.ciudad} — ${v.nombre} (aforo ${v.aforo}, shard ${v.id_shard})`, v.id_venue));
+        agregarLoc("VIP", 150000, 3, 10);
+        agregarLoc("General", 60000, 5, 10);
+      } catch (e) {
+        if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error");
+      }
+    }
+
+    document.getElementById("add").addEventListener("click", () => agregarLoc());
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const localidades = [...locs.children].map(r => ({
+        nombre: r.querySelector(".l-nombre").value.trim(),
+        precio: Number(r.querySelector(".l-precio").value),
+        filas: Number(r.querySelector(".l-filas").value),
+        asientos_por_fila: Number(r.querySelector(".l-asientos").value),
+      }));
+      const body = {
+        id_venue: Number(document.getElementById("venue").value),
+        nombre: document.getElementById("nombre").value.trim(),
+        descripcion: document.getElementById("descripcion").value.trim() || null,
+        fecha_inicio: new Date(document.getElementById("fecha").value).toISOString(),
+        publicar: document.getElementById("publicar").value === "true",
+        localidades,
+        condiciones: {
+          max_boletas_por_compra: Number(document.getElementById("maxb").value),
+          minutos_reserva: Number(document.getElementById("mins").value),
+          cargo_servicio_pct: Number(document.getElementById("cargo").value),
+        },
+      };
+      try {
+        const r = await apiEv("/eventos", "POST", body);
+        mostrar(msg, `Evento creado en el shard ${r.id_shard} con ${r.boletas_generadas} boletas. Abriéndolo...`, "ok");
+        setTimeout(() => location.href = "/static/evento.html?id=" + r.id_evento, 1800);
+      } catch (err) {
+        mostrar(msg, err.message, "error");
+      }
+    });
+
+    iniciar();
+  </script>
+</body>
+</html>

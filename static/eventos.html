@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Eventos</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { align-items: flex-start; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; margin-top: 16px; }
+    .ev { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; }
+    .ev h3 { font-size: 16px; margin: 8px 0 6px; color: #1e1b4b; }
+    .ev p { font-size: 13px; color: #6b7280; line-height: 1.5; }
+    .ev a.btn { display: block; margin-top: 10px; text-align: center; background: #7c3aed; color: #fff;
+                border-radius: 8px; padding: 8px; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .filtros { display: grid; grid-template-columns: 1fr 2fr auto; gap: 8px; align-items: end; }
+    .filtros button { margin-top: 0; width: auto; padding: 10px 16px; }
+    .tag { display: inline-block; font-size: 11px; background: #ede9fe; color: #5b21b6;
+           border-radius: 99px; padding: 2px 8px; margin-right: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:1000px">
+    <div class="header">
+      <h1>🎟️ Eventos</h1>
+      <span>
+        <a id="crear" href="/static/crear-evento.html" style="display:none;margin-right:14px">+ Crear evento</a>
+        <a href="/static/panel.html">← Panel</a>
+      </span>
+    </div>
+    <p class="sub">Filtra por ciudad. Cada ciudad vive en un shard distinto.</p>
+
+    <div class="filtros">
+      <div><label>Ciudad</label><select id="f-ciudad"><option value="">Todas</option></select></div>
+      <div><label>Buscar</label><input id="q" placeholder="nombre del evento"></div>
+      <button id="buscar">Buscar</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+    <div id="lista" class="grid"></div>
+
+    <div id="shards" class="info" style="display:none;margin-top:20px"></div>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const rol = localStorage.getItem("rol");
+    const msg = document.getElementById("msg");
+
+    async function cargar() {
+      const p = new URLSearchParams();
+      const c = document.getElementById("f-ciudad").value;
+      const q = document.getElementById("q").value.trim();
+      if (c) p.set("id_ciudad", c);
+      if (q) p.set("q", q);
+      const evs = await apiEv("/eventos?" + p.toString());
+      const lista = document.getElementById("lista");
+      lista.replaceChildren();
+      if (!evs.length) lista.append(h("p", { class: "sub" }, "No hay eventos publicados."));
+      for (const e of evs) {
+        lista.append(h("div", { class: "ev" },
+          h("span", { class: "tag" }, e.ciudad || "—"),
+          h("span", { class: "tag" }, "shard " + e.id_shard),
+          h("h3", {}, e.nombre),
+          h("p", {}, (e.venue || "") + " · " + fmtFecha(e.fecha_inicio)),
+          h("p", {}, "Desde " + fmtPrecio(e.precio_desde) + " · " + e.disponibles + " disponibles"),
+          h("a", { class: "btn", href: "/static/evento.html?id=" + e.id_evento }, "Ver y reservar")));
+      }
+    }
+
+    async function cargarShards() {
+      const s = await apiEv("/shards");
+      const box = document.getElementById("shards");
+      box.style.display = "block";
+      box.replaceChildren(
+        h("b", {}, "Estado de los shards (solo ADMIN)"),
+        ...s.map(x => h("p", {}, `Shard ${x.id_shard} (${x.ciudades.join(", ")}): ${x.eventos} eventos · boletas ${JSON.stringify(x.boletas)}`)));
+    }
+
+    async function iniciar() {
+      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
+      if (["ORGANIZADOR", "ADMIN"].includes(rol)) document.getElementById("crear").style.display = "inline";
+      try {
+        const ciudades = await apiEv("/ciudades");
+        const sel = document.getElementById("f-ciudad");
+        for (const c of ciudades) sel.add(new Option(`${c.nombre} (shard ${c.id_shard})`, c.id_ciudad));
+        await cargar();
+        if (rol === "ADMIN") await cargarShards();
+      } catch (e) {
+        if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error");
+      }
+    }
+
+    document.getElementById("buscar").addEventListener("click", () => cargar().catch(e => mostrar(msg, e.message, "error")));
+    iniciar();
+  </script>
+</body>
+</html>

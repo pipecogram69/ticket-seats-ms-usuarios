@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Evento</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { align-items: flex-start; }
+    .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; margin-top: 14px; }
+    @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+    .loc { font-size: 15px; margin: 16px 0 6px; color: #1e1b4b; }
+    .fila { display: flex; gap: 4px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+    .lbl { width: 22px; font-size: 12px; color: #6b7280; font-weight: 700; }
+    button.seat { width: 34px; margin: 0; padding: 6px 0; font-size: 12px; border-radius: 6px;
+                  border: 1px solid #16a34a; background: #f0fdf4; color: #166534; }
+    button.seat:hover { background: #dcfce7; }
+    button.seat.ocupado, button.seat.ocupado:hover { background: #e5e7eb; border-color: #d1d5db; color: #9ca3af; cursor: not-allowed; }
+    button.seat.sel, button.seat.sel:hover { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+    .cuenta { font-weight: 700; color: #b45309; margin-top: 8px; }
+    #panel p { margin: 6px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:1000px">
+    <div class="header"><h1 id="titulo">Evento</h1><a href="/static/eventos.html">← Eventos</a></div>
+    <p class="sub" id="detalle"></p>
+    <p class="sub" id="condiciones"></p>
+    <div id="msg" class="msg"></div>
+    <div class="layout">
+      <div id="mapa"></div>
+      <div id="panel" class="info"></div>
+    </div>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const id = new URLSearchParams(location.search).get("id");
+    const msg = document.getElementById("msg");
+    const rol = localStorage.getItem("rol");
+    let ev = null, boletas = [], reserva = null, timer = null;
+    const sel = new Map();
+
+    async function cargar() {
+      ev = await apiEv("/eventos/" + id);
+      boletas = await apiEv(`/eventos/${id}/boletas`);
+      sel.clear();
+      pintarCabecera();
+      pintarMapa();
+      pintarPanel();
+    }
+
+    function puedeComprar() {
+      return ["CLIENTE", "ADMIN"].includes(rol) && ev && ev.estado === "PUBLICADO";
+    }
+
+    function pintarCabecera() {
+      document.getElementById("titulo").textContent = ev.nombre;
+      document.getElementById("detalle").textContent =
+        `${ev.ciudad} · ${ev.venue} · ${fmtFecha(ev.fecha_inicio)} · shard ${ev.id_shard} · ${ev.estado}`;
+      const c = ev.condiciones || {};
+      document.getElementById("condiciones").textContent =
+        `Máx. ${c.max_boletas_por_compra ?? 6} boletas por compra · reserva de ${c.minutos_reserva ?? 10} min` +
+        (Number(c.cargo_servicio_pct) ? ` · cargo de servicio ${c.cargo_servicio_pct}%` : "");
+    }
+
+    function botonAsiento(b) {
+      const libre = b.estado === "DISPONIBLE";
+      const btn = h("button", { class: "seat " + (libre ? "libre" : "ocupado"), type: "button",
+                                title: `${b.fila}${b.asiento} · ${b.estado}` }, String(b.asiento));
+      if (!libre || !puedeComprar() || reserva) {
+        btn.disabled = true;
+      } else {
+        btn.addEventListener("click", () => {
+          if (sel.has(b.id_boleta)) { sel.delete(b.id_boleta); btn.classList.remove("sel"); }
+          else { sel.set(b.id_boleta, b); btn.classList.add("sel"); }
+          pintarPanel();
+        });
+      }
+      return btn;
+    }
+
+    function pintarMapa() {
+      const mapa = document.getElementById("mapa");
+      mapa.replaceChildren();
+      const grupos = new Map();
+      for (const b of boletas) {
+        if (!grupos.has(b.id_localidad)) grupos.set(b.id_localidad, { nombre: b.localidad, precio: b.precio, filas: new Map() });
+        const g = grupos.get(b.id_localidad);
+        if (!g.filas.has(b.fila)) g.filas.set(b.fila, []);
+        g.filas.get(b.fila).push(b);
+      }
+      for (const [idLoc, g] of grupos) {
+        const info = (ev.localidades || []).find(l => l.id_localidad === idLoc);
+        mapa.append(h("h3", { class: "loc" },
+          `${g.nombre} — ${fmtPrecio(g.precio)}` + (info ? ` · ${info.disponibles} disponibles` : "")));
+        for (const [fila, asientos] of g.filas) {
+          const row = h("div", { class: "fila" }, h("span", { class: "lbl" }, fila));
+          for (const b of asientos) row.append(botonAsiento(b));
+          mapa.append(row);
+        }
+      }
+    }
+
+    function pintarPanel() {
+      const p = document.getElementById("panel");
+      p.replaceChildren();
+      if (!puedeComprar()) {
+        p.append(h("p", {}, ev.estado !== "PUBLICADO"
+          ? "Este evento no está disponible para la venta."
+          : "Solo los clientes pueden reservar boletas."));
+        return;
+      }
+      if (reserva) {
+        p.append(
+          h("b", {}, "Reserva activa"),
+          ...reserva.reservadas.map(r => h("p", {}, `${r.localidad} ${r.fila}${r.asiento} — ${fmtPrecio(r.precio)}`)),
+          h("p", {}, "Subtotal: " + fmtPrecio(reserva.subtotal)),
+          h("p", {}, "Cargo de servicio: " + fmtPrecio(reserva.cargo_servicio)),
+          h("p", {}, h("b", {}, "Total: " + fmtPrecio(reserva.total))),
+          h("p", { id: "cuenta", class: "cuenta" }, ""),
+          h("button", { onclick: confirmar }, "Confirmar compra (simulado)"),
+          h("button", { class: "sec", onclick: liberar }, "Liberar boletas"));
+        return;
+      }
+      const lista = [...sel.values()];
+      const total = lista.reduce((a, b) => a + Number(b.precio), 0);
+      p.append(
+        h("b", {}, "Tu selección"),
+        lista.length
+          ? h("p", {}, lista.map(b => `${b.localidad} ${b.fila}${b.asiento}`).join(", "))
+          : h("p", {}, "Elige asientos en el mapa."),
+        h("p", {}, h("b", {}, "Subtotal: " + fmtPrecio(total))),
+        h("button", Object.assign({ onclick: reservar }, lista.length ? {} : { disabled: "" }), "Reservar"));
+    }
+
+    async function reservar() {
+      try {
+        const body = { id_evento: id, boletas: [...sel.values()].map(b => ({ id_boleta: b.id_boleta, version: b.version })) };
+        reserva = await apiEv("/inventario/reservar", "POST", body);
+        mostrar(msg, "Boletas reservadas. Confirma antes de que se agote el tiempo.", "ok");
+        iniciarCuenta();
+        boletas = await apiEv(`/eventos/${id}/boletas`);
+        pintarMapa();
+        pintarPanel();
+      } catch (e) {
+        mostrar(msg, e.message, "error");
+        if (e.status === 409) await cargar();
+      }
+    }
+
+    async function confirmar() {
+      try {
+        await apiEv("/inventario/confirmar", "POST", { id_evento: id, ids: reserva.reservadas.map(r => r.id_boleta) });
+        clearInterval(timer);
+        reserva = null;
+        await cargar();
+        mostrar(msg, "Compra confirmada. Las boletas quedaron VENDIDAS.", "ok");
+      } catch (e) {
+        mostrar(msg, e.message, "error");
+      }
+    }
+
+    async function liberar() {
+      try {
+        await apiEv("/inventario/liberar", "POST", { id_evento: id, ids: reserva.reservadas.map(r => r.id_boleta) });
+        clearInterval(timer);
+        reserva = null;
+        await cargar();
+        mostrar(msg, "Boletas liberadas.", "ok");
+      } catch (e) {
+        mostrar(msg, e.message, "error");
+      }
+    }
+
+    function iniciarCuenta() {
+      clearInterval(timer);
+      const fin = new Date(reserva.expira_en).getTime();
+      timer = setInterval(async () => {
+        const s = Math.floor((fin - Date.now()) / 1000);
+        if (s <= 0) {
+          clearInterval(timer);
+          reserva = null;
+          await cargar();
+          mostrar(msg, "La reserva expiró y las boletas se liberaron.", "error");
+          return;
+        }
+        const c = document.getElementById("cuenta");
+        if (c) c.textContent = `Expira en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }, 1000);
+    }
+
+    async function iniciar() {
+      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
+      if (!id) return location.href = "/static/eventos.html";
+      try { await cargar(); }
+      catch (e) { if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error"); }
+    }
+    iniciar();
+  </script>
+</body>
+</html>
