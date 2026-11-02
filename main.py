@@ -90,7 +90,7 @@ async def login(data: LoginIn, request: Request):
             await auditar(False)
             raise HTTPException(401, "Credenciales incorrectas")
 
-        if u["estado"] == "INACTIVO":
+        if u["estado"] in ("INACTIVO", "BLOQUEADO"):
             await auditar(False, u["id_usuario"])
             raise HTTPException(403, "Usuario inactivo")
 
@@ -142,3 +142,87 @@ async def inicio():
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ---------- Gestión de usuarios (ADMIN) ----------
+from typing import Literal
+from uuid import UUID
+from pydantic import BaseModel, Field
+from schemas import RolEnum
+
+
+class CambioRol(BaseModel):
+    rol: RolEnum
+
+
+class CambioEstado(BaseModel):
+    estado: Literal["ACTIVO", "INACTIVO", "BLOQUEADO"]
+
+
+class CambioPassword(BaseModel):
+    password_actual: str
+    password_nueva: str = Field(min_length=8, max_length=72)
+
+
+_SEL_USUARIO = """SELECT u.id_usuario::text, u.nombre, u.apellido, u.email, u.telefono,
+                         u.estado, r.nombre AS rol
+                  FROM usuario u JOIN rol r ON r.id_rol = u.id_rol"""
+
+
+@app.get("/usuarios", response_model=list[UsuarioOut])
+async def listar_usuarios(rol: str | None = None, estado: str | None = None,
+                          q: str | None = None, _=Depends(requiere_roles("ADMIN"))):
+    sql = _SEL_USUARIO + """
+        WHERE ($1::text IS NULL OR r.nombre = $1)
+          AND ($2::text IS NULL OR u.estado = $2)
+          AND ($3::text IS NULL OR u.email ILIKE '%' || $3 || '%'
+               OR u.nombre ILIKE '%' || $3 || '%' OR u.apellido ILIKE '%' || $3 || '%')
+        ORDER BY u.created_at DESC LIMIT 200"""
+    async with db.get_pool().acquire() as conn:
+        rows = await conn.fetch(sql, rol, estado, q)
+    return [dict(r) for r in rows]
+
+
+@app.patch("/usuarios/{id_usuario}/rol", response_model=UsuarioOut)
+async def cambiar_rol(id_usuario: UUID, data: CambioRol, admin=Depends(requiere_roles("ADMIN"))):
+    if str(id_usuario) == admin["sub"]:
+        raise HTTPException(400, "No puedes cambiar tu propio rol")
+    async with db.get_pool().acquire() as conn:
+        ok = await conn.fetchval(
+            """UPDATE usuario SET id_rol = (SELECT id_rol FROM rol WHERE nombre = $1), updated_at = now()
+               WHERE id_usuario = $2 RETURNING 1""", data.rol.value, id_usuario)
+        if not ok:
+            raise HTTPException(404, "Usuario no encontrado")
+        row = await conn.fetchrow(_SEL_USUARIO + " WHERE u.id_usuario = $1", id_usuario)
+    return dict(row)
+
+
+@app.patch("/usuarios/{id_usuario}/estado", response_model=UsuarioOut)
+async def cambiar_estado(id_usuario: UUID, data: CambioEstado, admin=Depends(requiere_roles("ADMIN"))):
+    if str(id_usuario) == admin["sub"]:
+        raise HTTPException(400, "No puedes cambiar tu propio estado")
+    async with db.get_pool().acquire() as conn:
+        ok = await conn.fetchval(
+            """UPDATE usuario
+               SET estado = $1,
+                   intentos_fallidos = CASE WHEN $1 = 'ACTIVO' THEN 0 ELSE intentos_fallidos END,
+                   bloqueado_hasta   = CASE WHEN $1 = 'ACTIVO' THEN NULL ELSE bloqueado_hasta END,
+                   updated_at = now()
+               WHERE id_usuario = $2 RETURNING 1""", data.estado, id_usuario)
+        if not ok:
+            raise HTTPException(404, "Usuario no encontrado")
+        row = await conn.fetchrow(_SEL_USUARIO + " WHERE u.id_usuario = $1", id_usuario)
+    return dict(row)
+
+
+@app.patch("/auth/password")
+async def cambiar_password(data: CambioPassword, user: dict = Depends(usuario_actual)):
+    async with db.get_pool().acquire() as conn:
+        actual = await conn.fetchval(
+            "SELECT password_hash FROM usuario WHERE id_usuario = $1::uuid", user["sub"])
+        if not actual or not verify_password(data.password_actual, actual):
+            raise HTTPException(400, "La contraseña actual es incorrecta")
+        await conn.execute(
+            "UPDATE usuario SET password_hash = $1, updated_at = now() WHERE id_usuario = $2::uuid",
+            hash_password(data.password_nueva), user["sub"])
+    return {"ok": True}

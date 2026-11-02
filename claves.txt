@@ -1,2 +1,9 @@
 Admin12345 = contraseña
 admin@ticketseats.com = correo administrador 
+
+
+ejecutar proyecto 
+
+docker compose down -v
+docker compose up -d --build
+docker compose logs -f ms-usuarios
