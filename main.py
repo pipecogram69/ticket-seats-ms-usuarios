@@ -226,3 +226,11 @@ async def cambiar_password(data: CambioPassword, user: dict = Depends(usuario_ac
             "UPDATE usuario SET password_hash = $1, updated_at = now() WHERE id_usuario = $2::uuid",
             hash_password(data.password_nueva), user["sub"])
     return {"ok": True}
+
+
+@app.middleware("http")
+async def sin_cache_estaticos(request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/static"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp

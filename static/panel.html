@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ticket Seats - Panel</title>
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .menu { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+    .menu a { background: #7c3aed; color: #fff; text-decoration: none; padding: 10px 16px;
+              border-radius: 8px; font-weight: 600; font-size: 14px; }
+    .menu a:hover { background: #6d28d9; }
+    .menu a.sec { background: #ede9fe; color: #5b21b6; }
+  </style>
 </head>
 <body>
   <div class="card wide">
@@ -14,15 +21,21 @@
     </div>
     <p class="sub" id="saludo"></p>
 
+    <div class="menu" id="menu">
+      <a href="/static/eventos.html">🎟️ Ver eventos</a>
+      <a id="m-crear" class="sec" href="/static/crear-evento.html" style="display:none">➕ Crear evento</a>
+      <a id="m-usuarios" class="sec" href="/static/usuarios.html" style="display:none">👥 Gestionar usuarios</a>
+    </div>
+
     <div class="info">
       <div><b>Correo:</b> <span id="email"></span></div>
       <div><b>Teléfono:</b> <span id="telefono"></span></div>
       <div><b>Estado:</b> <span id="estado"></span></div>
     </div>
 
-    <div id="contenido-rol" class="section"></div><p style="margin:12px 0"><a href="/static/eventos.html">🎟️ Ver eventos</a></p>
+    <div id="contenido-rol" class="section"></div>
 
-    <div id="admin" class="section" style="display:none"><p style="margin-bottom:12px"><a href="/static/usuarios.html">👥 Gestionar usuarios →</a></p>
+    <div id="admin" class="section" style="display:none">
       <h1 style="font-size:18px">Crear usuario</h1>
       <p class="sub">Solo visible para ADMIN</p>
       <form id="form-crear">
@@ -55,9 +68,9 @@
   <script src="/static/api.js"></script>
   <script>
     const textos = {
-      ADMIN: "Eres administrador: puedes crear usuarios con cualquier rol.",
-      ORGANIZADOR: "Aquí gestionarás tus eventos y localidades (próximo microservicio).",
-      CLIENTE: "Aquí verás tus reservas y compras de boletas (próximo microservicio).",
+      ADMIN: "Eres administrador: gestionas usuarios, roles y puedes crear eventos.",
+      ORGANIZADOR: "Crea y publica tus eventos con sus localidades y condiciones comerciales.",
+      CLIENTE: "Explora los eventos publicados y reserva tus asientos.",
       VALIDADOR: "Aquí validarás las boletas en el ingreso al evento (próximo microservicio).",
     };
 
@@ -71,7 +84,11 @@
         document.getElementById("telefono").textContent = u.telefono || "—";
         document.getElementById("estado").textContent = u.estado;
         document.getElementById("contenido-rol").textContent = textos[u.rol] || "";
-        if (u.rol === "ADMIN") document.getElementById("admin").style.display = "block";
+        if (u.rol === "ADMIN" || u.rol === "ORGANIZADOR") document.getElementById("m-crear").style.display = "inline-block";
+        if (u.rol === "ADMIN") {
+          document.getElementById("m-usuarios").style.display = "inline-block";
+          document.getElementById("admin").style.display = "block";
+        }
       } catch (err) {
         if (err.status === 401) cerrarSesion();
       }

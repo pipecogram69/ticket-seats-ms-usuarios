@@ -24,7 +24,7 @@
 <body>
   <div class="card" style="max-width:1000px">
     <div class="header"><h1 id="titulo">Evento</h1><a href="/static/eventos.html">← Eventos</a></div>
-    <p class="sub" id="detalle"></p>
+    <div id="banner"></div><p class="sub" id="detalle"></p>
     <p class="sub" id="condiciones"></p>
     <div id="msg" class="msg"></div>
     <div class="layout">
@@ -56,6 +56,7 @@
 
     function pintarCabecera() {
       document.getElementById("titulo").textContent = ev.nombre;
+      document.getElementById("banner").replaceChildren(imgEvento(ev.imagen_url, 220));
       document.getElementById("detalle").textContent =
         `${ev.ciudad} · ${ev.venue} · ${fmtFecha(ev.fecha_inicio)} · shard ${ev.id_shard} · ${ev.estado}`;
       const c = ev.condiciones || {};
@@ -119,7 +120,7 @@
           h("p", {}, "Cargo de servicio: " + fmtPrecio(reserva.cargo_servicio)),
           h("p", {}, h("b", {}, "Total: " + fmtPrecio(reserva.total))),
           h("p", { id: "cuenta", class: "cuenta" }, ""),
-          h("button", { onclick: confirmar }, "Confirmar compra (simulado)"),
+          h("button", { onclick: irAPagar }, "Ir a pagar"),
           h("button", { class: "sec", onclick: liberar }, "Liberar boletas"));
         return;
       }
@@ -146,6 +147,16 @@
       } catch (e) {
         mostrar(msg, e.message, "error");
         if (e.status === 409) await cargar();
+      }
+    }
+
+    async function irAPagar() {
+      try {
+        const o = await apiOrd("/ordenes", "POST", { id_evento: id });
+        clearInterval(timer);
+        location.href = "/static/pagar.html?orden=" + o.id_orden;
+      } catch (e) {
+        mostrar(msg, e.message, "error");
       }
     }
 

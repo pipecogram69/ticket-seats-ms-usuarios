@@ -59,7 +59,7 @@
       if (!evs.length) lista.append(h("p", { class: "sub" }, "No hay eventos publicados."));
       for (const e of evs) {
         lista.append(h("div", { class: "ev" },
-          h("span", { class: "tag" }, e.ciudad || "—"),
+          imgEvento(e.imagen_url), h("span", { class: "tag" }, e.ciudad || "—"),
           h("span", { class: "tag" }, "shard " + e.id_shard),
           h("h3", {}, e.nombre),
           h("p", {}, (e.venue || "") + " · " + fmtFecha(e.fecha_inicio)),

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Pagar</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .info p { margin: 4px 0; font-size: 14px; }
+    .cuenta { font-weight: 700; color: #b45309; margin: 10px 0; }
+    .hint { font-size: 12px; color: #6b7280; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:540px">
+    <div class="header"><h1>💳 Pagar</h1><a href="/static/eventos.html">← Eventos</a></div>
+    <p class="sub">Revisa tu orden y elige el método de pago.</p>
+
+    <div id="resumen" class="info"></div>
+    <p id="cuenta" class="cuenta"></p>
+
+    <form id="form">
+      <label>Método de pago</label>
+      <select id="metodo">
+        <option value="TARJETA">Tarjeta</option>
+        <option value="PSE">PSE</option>
+        <option value="NEQUI">Nequi</option>
+      </select>
+      <div id="bloque-tarjeta">
+        <label>Número de tarjeta (de prueba)</label>
+        <input id="numero" inputmode="numeric" autocomplete="off" placeholder="4111 1111 1111 1234" maxlength="23">
+        <p class="hint">Es una simulación: usa cualquier número. Si termina en 0000 el pago se rechaza. Al servidor solo viajan los últimos 4 dígitos.</p>
+      </div>
+      <button type="submit" id="pagar">Pagar</button>
+    </form>
+    <button class="sec" id="cancelar">Cancelar y liberar asientos</button>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const id = new URLSearchParams(location.search).get("orden");
+    const msg = document.getElementById("msg");
+    let orden = null, timer = null;
+
+    function bloquear(texto) {
+      document.getElementById("pagar").disabled = true;
+      document.getElementById("cancelar").style.display = "none";
+      clearInterval(timer);
+      document.getElementById("cuenta").textContent = "";
+      mostrar(msg, texto, "error");
+    }
+
+    async function cargar() {
+      orden = await apiOrd("/ordenes/" + id);
+      if (orden.estado === "PAGADA") return location.href = "/static/mis-boletas.html";
+      document.getElementById("resumen").replaceChildren(
+        h("b", {}, orden.evento_nombre),
+        h("p", {}, `${orden.ciudad || ""} · ${orden.venue || ""} · ${fmtFecha(orden.evento_fecha)}`),
+        ...orden.detalle.map(d => h("p", {}, `${d.localidad} ${d.fila}${d.asiento} — ${fmtPrecio(d.precio)}`)),
+        h("p", {}, "Subtotal: " + fmtPrecio(orden.subtotal)),
+        h("p", {}, "Cargo de servicio: " + fmtPrecio(orden.cargo_servicio)),
+        h("p", {}, h("b", {}, "Total: " + fmtPrecio(orden.total))));
+      if (orden.estado !== "PENDIENTE_PAGO") return bloquear("Esta orden está " + orden.estado + ".");
+      const fin = new Date(orden.expira_en).getTime();
+      clearInterval(timer);
+      timer = setInterval(() => {
+        const s = Math.floor((fin - Date.now()) / 1000);
+        if (s <= 0) return bloquear("La reserva expiró. Vuelve a elegir tus asientos.");
+        document.getElementById("cuenta").textContent =
+          `Tus asientos se liberan en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }, 1000);
+    }
+
+    document.getElementById("metodo").addEventListener("change", (e) => {
+      document.getElementById("bloque-tarjeta").style.display = e.target.value === "TARJETA" ? "block" : "none";
+    });
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const metodo = document.getElementById("metodo").value;
+      const digitos = document.getElementById("numero").value.replace(/\D/g, "");
+      if (metodo === "TARJETA" && digitos.length < 4) return mostrar(msg, "Escribe el número de la tarjeta", "error");
+      const boton = document.getElementById("pagar");
+      boton.disabled = true;
+      try {
+        await apiOrd(`/ordenes/${id}/pagar`, "POST", { metodo, ultimos4: metodo === "TARJETA" ? digitos.slice(-4) : null });
+        location.href = "/static/mis-boletas.html?nueva=1";
+      } catch (err) {
+        mostrar(msg, err.message, "error");
+        boton.disabled = false;
+        if (err.status === 409) cargar().catch(() => {});
+      }
+    });
+
+    document.getElementById("cancelar").addEventListener("click", async () => {
+      if (!confirm("¿Cancelar la orden y liberar los asientos?")) return;
+      try {
+        await apiOrd(`/ordenes/${id}/cancelar`, "POST");
+        location.href = "/static/eventos.html";
+      } catch (err) {
+        mostrar(msg, err.message, "error");
+      }
+    });
+
+    (async () => {
+      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
+      if (!id) return location.href = "/static/eventos.html";
+      try { await cargar(); }
+      catch (e) { if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error"); }
+    })();
+  </script>
+</body>
+</html>

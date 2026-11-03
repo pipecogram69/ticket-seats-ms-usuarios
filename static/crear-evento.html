@@ -26,6 +26,8 @@
       <input id="descripcion">
       <label>Fecha y hora</label>
       <input type="datetime-local" id="fecha" required>
+      <label>Imagen del evento (JPG, PNG o WEBP, máx. 3 MB)</label>
+      <input type="file" id="imagen" accept="image/jpeg,image/png,image/webp">
 
       <div class="section">
         <b>Localidades</b>
@@ -106,7 +108,13 @@
       };
       try {
         const r = await apiEv("/eventos", "POST", body);
-        mostrar(msg, `Evento creado en el shard ${r.id_shard} con ${r.boletas_generadas} boletas. Abriéndolo...`, "ok");
+        const archivo = document.getElementById("imagen").files[0];
+        let extra = "";
+        if (archivo) {
+          try { await subirImagen(r.id_evento, archivo); }
+          catch (e2) { extra = " (la imagen no se pudo subir: " + e2.message + ")"; }
+        }
+        mostrar(msg, `Evento creado en el shard ${r.id_shard} con ${r.boletas_generadas} boletas.${extra} Abriéndolo...`, "ok");
         setTimeout(() => location.href = "/static/evento.html?id=" + r.id_evento, 1800);
       } catch (err) {
         mostrar(msg, err.message, "error");

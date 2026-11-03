@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Validar ingreso</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    #codigo { font-size: 20px; text-align: center; letter-spacing: 2px; text-transform: uppercase; }
+    .res { margin-top: 16px; padding: 16px; border-radius: 10px; text-align: center; display: none; }
+    .res.ok { display: block; background: #dcfce7; color: #166534; }
+    .res.no { display: block; background: #fee2e2; color: #991b1b; }
+    .res h2 { font-size: 24px; margin-bottom: 8px; }
+    .res p { font-size: 14px; margin: 3px 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header"><h1>✅ Validar ingreso</h1><a href="/static/panel.html">← Panel</a></div>
+    <p class="sub">Escribe o pega el código de la boleta (o usa un lector USB).</p>
+    <form id="form">
+      <input id="codigo" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autofocus required>
+      <button type="submit">Validar</button>
+    </form>
+    <div id="res" class="res"></div>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const res = document.getElementById("res");
+    const rol = localStorage.getItem("rol");
+    if (!localStorage.getItem("token")) location.href = "/static/login.html";
+    else if (!["VALIDADOR", "ADMIN"].includes(rol)) location.href = "/static/panel.html";
+
+    function mostrarRes(clase, titulo, boleta, extra) {
+      res.className = "res " + clase;
+      res.replaceChildren(h("h2", {}, titulo));
+      if (boleta) res.append(
+        h("p", {}, h("b", {}, boleta.evento_nombre)),
+        h("p", {}, `${boleta.localidad} · Fila ${boleta.fila} · Asiento ${boleta.asiento}`),
+        h("p", {}, `${boleta.ciudad || ""} · ${boleta.venue || ""} · ${fmtFecha(boleta.evento_fecha)}`));
+      if (extra) res.append(h("p", {}, extra));
+    }
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const campo = document.getElementById("codigo");
+      try {
+        const r = await apiOrd("/boletas/validar", "POST", { codigo: campo.value });
+        if (r.resultado === "ACEPTADA") mostrarRes("ok", "✅ INGRESO PERMITIDO", r.boleta);
+        else if (r.resultado === "YA_USADA") mostrarRes("no", "⛔ BOLETA YA USADA", r.boleta, "Usada el " + fmtFecha(r.boleta.usada_en));
+        else mostrarRes("no", "⛔ BOLETA " + r.resultado, r.boleta);
+      } catch (err) {
+        if (err.status === 401) return cerrarSesion();
+        mostrarRes("no", "⛔ " + err.message);
+      }
+      campo.value = "";
+      campo.focus();
+    });
+  </script>
+</body>
+</html>
