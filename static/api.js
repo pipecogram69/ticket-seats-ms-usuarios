@@ -110,3 +110,43 @@ document.addEventListener("DOMContentLoaded", () => {
   if (rol === "VALIDADOR" || rol === "ADMIN")
     menu.append(h("a", { href: "/static/validar.html", style: estilo }, "✅ Validar ingreso"));
 });
+
+// ---------- Panel: próximos eventos (reemplaza el mensaje de rol) ----------
+document.addEventListener("DOMContentLoaded", async () => {
+  const mensajeRol = document.getElementById("contenido-rol");
+  if (!mensajeRol || document.getElementById("proximos")) return;
+  mensajeRol.style.display = "none";
+
+  const lista = h("div", { style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px" });
+  const caja = h("div", { id: "proximos", class: "section" },
+    h("h2", { style: "font-size:18px;color:#1e1b4b;margin-bottom:10px" }, "📅 Próximos eventos"),
+    lista);
+  mensajeRol.after(caja);
+
+  try {
+    const proximos = (await apiEv("/eventos"))
+      .filter(e => new Date(e.fecha_inicio) > new Date())
+      .slice(0, 6);
+
+    if (!proximos.length) {
+      lista.replaceWith(h("p", { class: "sub" }, "Todavía no hay eventos próximos."));
+      return;
+    }
+
+    for (const e of proximos) {
+      lista.append(h("a", {
+          href: "/static/evento.html?id=" + e.id_evento,
+          style: "display:block;text-decoration:none;color:inherit;border:1px solid #e5e7eb;border-radius:10px;padding:10px"
+        },
+        imgEvento(e.imagen_url, 90),
+        h("div", { style: "font-weight:700;font-size:14px;color:#1e1b4b" }, e.nombre),
+        h("div", { style: "font-size:12px;color:#6b7280;margin-top:2px" }, fmtFecha(e.fecha_inicio)),
+        h("div", { style: "font-size:12px;color:#6b7280" }, (e.ciudad || "") + (e.venue ? " · " + e.venue : "")),
+        h("div", { style: "font-size:12px;color:#5b21b6;font-weight:600;margin-top:4px" }, "Desde " + fmtPrecio(e.precio_desde))));
+    }
+    caja.append(h("p", { style: "margin-top:12px;font-size:14px" },
+      h("a", { href: "/static/eventos.html" }, "Ver todos los eventos →")));
+  } catch (err) {
+    lista.replaceWith(h("p", { class: "sub" }, "No se pudieron cargar los eventos."));
+  }
+});
