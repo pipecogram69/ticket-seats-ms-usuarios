@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Mis eventos</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app">
+  <main class="main">
+    <div class="page-head">
+      <h1>Mis eventos</h1>
+      <p class="sub">Administra tus eventos y revisa las ventas. Si eres ADMIN, ves los de todos.</p>
+    </div>
+
+    <div id="kpis" class="kpis"></div>
+    <div id="msg" class="msg"></div>
+
+    <section class="box">
+      <div class="box-head">
+        <h2>Eventos</h2>
+        <a class="btn sm" href="/static/crear-evento.html">+ Crear evento</a>
+      </div>
+      <div class="scroll">
+        <table class="tabla">
+          <thead><tr><th>Evento</th><th>Fecha</th><th>Estado</th><th>Ventas</th><th>Ingresos</th><th>Acciones</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/api.js"></script>
+  <script>
+    if (!["ORGANIZADOR", "ADMIN"].includes(localStorage.getItem("rol"))) location.href = "/static/panel.html";
+    const msg = document.getElementById("msg");
+
+    const kpi = (t, v) => h("div", { class: "kpi" }, h("small", {}, t), h("b", {}, v));
+    const boton = (txt, fn, clase = "btn sec sm") => h("button", { class: clase, type: "button", onclick: fn }, txt);
+
+    async function cambiarEstado(e, estado) {
+      const txt = estado === "CANCELADO"
+        ? "¿Cancelar este evento? Los compradores podrán pedir la devolución completa."
+        : "¿Publicar este evento?";
+      if (!confirm(txt)) return;
+      try {
+        await apiEv(`/eventos/${e.id_evento}/estado`, "PATCH", { estado });
+        mostrar(msg, estado === "CANCELADO" ? "Evento cancelado." : "Evento publicado.", "ok");
+        await cargar();
+      } catch (err) { mostrar(msg, err.message, "error"); }
+    }
+
+    function fila(e) {
+      const pct = e.total ? Math.round(Number(e.vendidas) * 100 / Number(e.total)) : 0;
+      const editable = ["BORRADOR", "PUBLICADO"].includes(e.estado);
+      return h("tr", {},
+        h("td", {}, h("b", {}, e.nombre), h("div", { class: "meta" }, `${e.ciudad || ""} · ${e.venue || ""}`)),
+        h("td", {}, fmtFecha(e.fecha_inicio)),
+        h("td", {}, h("span", { class: "st " + e.estado }, e.estado)),
+        h("td", {}, `${e.vendidas}/${e.total} vendidas` + (Number(e.reservadas) ? ` · ${e.reservadas} en reserva` : ""),
+          h("div", { class: "barra" }, h("i", { style: `width:${pct}%` }))),
+        h("td", {}, fmtPrecio(e.ingresos)),
+        h("td", {}, h("div", { class: "acciones" },
+          h("a", { class: "btn sec sm", href: "/static/evento.html?id=" + e.id_evento }, "Ver"),
+          editable ? h("a", { class: "btn sec sm", href: "/static/editar-evento.html?id=" + e.id_evento }, "Editar") : null,
+          e.estado === "BORRADOR" ? boton("Publicar", () => cambiarEstado(e, "PUBLICADO"), "btn sm") : null,
+          editable ? boton("Cancelar", () => cambiarEstado(e, "CANCELADO")) : null)));
+    }
+
+    async function cargar() {
+      try {
+        const evs = await apiEv("/organizador/eventos");
+        document.getElementById("kpis").replaceChildren(
+          kpi("Eventos", evs.length),
+          kpi("Publicados", evs.filter(e => e.estado === "PUBLICADO").length),
+          kpi("Boletas vendidas", evs.reduce((a, e) => a + Number(e.vendidas), 0)),
+          kpi("Ingresos por boletas", fmtPrecio(evs.reduce((a, e) => a + Number(e.ingresos), 0))));
+        document.getElementById("tbody").replaceChildren(...(evs.length ? evs.map(fila)
+          : [h("tr", {}, h("td", { colspan: "6" }, "Todavía no has creado eventos."))]));
+      } catch (e) {
+        if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error");
+      }
+    }
+    cargar();
+  </script>
+</body>
+</html>

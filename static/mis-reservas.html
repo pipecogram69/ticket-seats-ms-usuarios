@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Mis reservas</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app">
+  <main class="main">
+    <div class="page-head">
+      <h1>Mis reservas</h1>
+      <p class="sub">Tus asientos reservados. Paga antes de que se agote el tiempo.</p>
+    </div>
+    <div id="msg" class="msg" style="margin-bottom:16px"></div>
+    <div id="lista"></div>
+  </main>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const msg = document.getElementById("msg");
+    const boton = (txt, fn, clase = "btn sec sm") => h("button", { class: clase, type: "button", onclick: fn }, txt);
+
+    async function pagar(r) {
+      try {
+        const o = await apiOrd("/ordenes", "POST", { id_evento: r.id_evento });
+        location.href = "/static/pagar.html?orden=" + o.id_orden;
+      } catch (e) { mostrar(msg, e.message, "error"); }
+    }
+
+    async function cancelar(r) {
+      if (!confirm("¿Cancelar la reserva y liberar los asientos?")) return;
+      try {
+        await api(`/reservas/${r.id_reserva}/cancelar`, "POST");
+        mostrar(msg, "Reserva cancelada.", "ok");
+        await cargar();
+      } catch (e) { mostrar(msg, e.message, "error"); }
+    }
+
+    function tarjeta(r) {
+      const asientos = r.detalle.map(d => `${d.localidad} ${d.fila}${d.asiento}`).join(", ");
+      const activa = r.estado === "ACTIVA";
+      return h("article", { class: "box", style: "margin-bottom:16px" },
+        h("div", { class: "box-head" },
+          h("div", {}, h("h3", {}, r.evento_nombre),
+            h("p", { class: "meta" }, `${r.ciudad || ""} · ${r.venue || ""} · ${fmtFecha(r.evento_fecha)}`)),
+          h("span", { class: "st " + r.estado }, r.estado)),
+        h("p", { class: "meta" }, asientos),
+        h("div", { class: "linea total" }, h("span", {}, "Total"), h("b", {}, fmtPrecio(r.total))),
+        activa ? h("p", { class: "cuenta" }, "⏱ Expira: " + fmtFecha(r.expira_en)) : null,
+        activa ? h("div", { class: "acciones" }, boton("Ir a pagar", () => pagar(r), "btn sm"), boton("Cancelar", () => cancelar(r))) : null);
+    }
+
+    async function cargar() {
+      try {
+        const rs = await api("/reservas/mias");
+        document.getElementById("lista").replaceChildren(...(rs.length ? rs.map(tarjeta)
+          : [h("p", { class: "sub" }, "Aún no tienes reservas.")]));
+      } catch (e) {
+        if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error");
+      }
+    }
+    cargar();
+  </script>
+</body>
+</html>

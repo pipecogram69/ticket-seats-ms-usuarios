@@ -1,4 +1,5 @@
 import asyncio
+import os
 import asyncpg
 from config import DATABASE_URL
 from security import hash_password
@@ -10,7 +11,7 @@ async def main():
            VALUES ('Admin', 'Sistema', 'admin@ticketseats.com', $1,
                    (SELECT id_rol FROM rol WHERE nombre = 'ADMIN'))
            ON CONFLICT (email) DO NOTHING""",
-        hash_password("Admin12345"))
+        hash_password(os.environ.get("ADMIN_PASSWORD", "Admin12345")))
     await conn.close()
     print("Admin creado: admin@ticketseats.com / Admin12345")
 

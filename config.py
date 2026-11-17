@@ -6,3 +6,5 @@ JWT_ALG = "HS256"
 JWT_EXP_MIN = 60
 MAX_INTENTOS = 5
 BLOQUEO_MIN = 15
+
+EVENTOS_URL = os.getenv("EVENTOS_URL", "http://localhost:8002")

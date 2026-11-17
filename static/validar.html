@@ -5,32 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ticket Seats - Validar ingreso</title>
   <link rel="stylesheet" href="/static/style.css">
-  <style>
-    #codigo { font-size: 20px; text-align: center; letter-spacing: 2px; text-transform: uppercase; }
-    .res { margin-top: 16px; padding: 16px; border-radius: 10px; text-align: center; display: none; }
-    .res.ok { display: block; background: #dcfce7; color: #166534; }
-    .res.no { display: block; background: #fee2e2; color: #991b1b; }
-    .res h2 { font-size: 24px; margin-bottom: 8px; }
-    .res p { font-size: 14px; margin: 3px 0; }
-  </style>
 </head>
-<body>
-  <div class="card">
-    <div class="header"><h1>✅ Validar ingreso</h1><a href="/static/panel.html">← Panel</a></div>
-    <p class="sub">Escribe o pega el código de la boleta (o usa un lector USB).</p>
-    <form id="form">
-      <input id="codigo" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autofocus required>
-      <button type="submit">Validar</button>
-    </form>
-    <div id="res" class="res"></div>
-  </div>
+<body class="app">
+  <main class="main">
+    <div class="page-head">
+      <h1>Validar ingreso</h1>
+      <p class="sub">Escribe o pega el código de la boleta (o usa un lector USB).</p>
+    </div>
+
+    <div class="centro">
+      <section class="box">
+        <form id="form">
+          <label>Código de la boleta</label>
+          <input id="codigo" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autofocus required>
+          <button type="submit" class="btn block">Validar</button>
+        </form>
+        <div id="res" class="res"></div>
+      </section>
+    </div>
+  </main>
 
   <script src="/static/api.js"></script>
   <script>
     const res = document.getElementById("res");
-    const rol = localStorage.getItem("rol");
-    if (!localStorage.getItem("token")) location.href = "/static/login.html";
-    else if (!["VALIDADOR", "ADMIN"].includes(rol)) location.href = "/static/panel.html";
+    if (!["VALIDADOR", "ADMIN"].includes(localStorage.getItem("rol"))) location.href = "/static/panel.html";
 
     function mostrarRes(clase, titulo, boleta, extra) {
       res.className = "res " + clase;

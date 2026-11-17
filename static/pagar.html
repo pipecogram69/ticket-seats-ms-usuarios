@@ -5,43 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ticket Seats - Pagar</title>
   <link rel="stylesheet" href="/static/style.css">
-  <style>
-    .info p { margin: 4px 0; font-size: 14px; }
-    .cuenta { font-weight: 700; color: #b45309; margin: 10px 0; }
-    .hint { font-size: 12px; color: #6b7280; margin-top: 6px; }
-  </style>
 </head>
-<body>
-  <div class="card" style="max-width:540px">
-    <div class="header"><h1>💳 Pagar</h1><a href="/static/eventos.html">← Eventos</a></div>
-    <p class="sub">Revisa tu orden y elige el método de pago.</p>
+<body class="app">
+  <main class="main">
+    <div class="page-head">
+      <h1>Finalizar compra</h1>
+      <p class="sub">Revisa tu orden y elige el método de pago.</p>
+    </div>
 
-    <div id="resumen" class="info"></div>
-    <p id="cuenta" class="cuenta"></p>
+    <div class="cols">
+      <section class="box" id="resumen"></section>
 
-    <form id="form">
-      <label>Método de pago</label>
-      <select id="metodo">
-        <option value="TARJETA">Tarjeta</option>
-        <option value="PSE">PSE</option>
-        <option value="NEQUI">Nequi</option>
-      </select>
-      <div id="bloque-tarjeta">
-        <label>Número de tarjeta (de prueba)</label>
-        <input id="numero" inputmode="numeric" autocomplete="off" placeholder="4111 1111 1111 1234" maxlength="23">
-        <p class="hint">Es una simulación: usa cualquier número. Si termina en 0000 el pago se rechaza. Al servidor solo viajan los últimos 4 dígitos.</p>
-      </div>
-      <button type="submit" id="pagar">Pagar</button>
-    </form>
-    <button class="sec" id="cancelar">Cancelar y liberar asientos</button>
-    <div id="msg" class="msg"></div>
-  </div>
+      <section class="box">
+        <h2>💳 Método de pago</h2>
+        <p id="cuenta" class="cuenta"></p>
+        <form id="form">
+          <label>Método</label>
+          <select id="metodo">
+            <option value="TARJETA">Tarjeta</option>
+            <option value="PSE">PSE</option>
+            <option value="NEQUI">Nequi</option>
+          </select>
+          <div id="bloque-tarjeta">
+            <label>Número de tarjeta (de prueba)</label>
+            <input id="numero" inputmode="numeric" autocomplete="off" placeholder="4111 1111 1111 1234" maxlength="23">
+            <p class="hint">Es una simulación: usa cualquier número. Si termina en 0000 el pago se rechaza. Al servidor solo viajan los últimos 4 dígitos.</p>
+          </div>
+          <button type="submit" id="pagar" class="btn block">Pagar ahora</button>
+        </form>
+        <button class="btn sec block" id="cancelar" type="button">Cancelar y liberar asientos</button>
+        <div id="msg" class="msg"></div>
+      </section>
+    </div>
+  </main>
 
   <script src="/static/api.js"></script>
   <script>
     const id = new URLSearchParams(location.search).get("orden");
     const msg = document.getElementById("msg");
     let orden = null, timer = null;
+
+    function linea(txt, valor, clase = "") {
+      return h("div", { class: "linea " + clase }, h("span", {}, txt), h("b", {}, valor));
+    }
 
     function bloquear(texto) {
       document.getElementById("pagar").disabled = true;
@@ -55,12 +61,15 @@
       orden = await apiOrd("/ordenes/" + id);
       if (orden.estado === "PAGADA") return location.href = "/static/mis-boletas.html";
       document.getElementById("resumen").replaceChildren(
-        h("b", {}, orden.evento_nombre),
-        h("p", {}, `${orden.ciudad || ""} · ${orden.venue || ""} · ${fmtFecha(orden.evento_fecha)}`),
-        ...orden.detalle.map(d => h("p", {}, `${d.localidad} ${d.fila}${d.asiento} — ${fmtPrecio(d.precio)}`)),
-        h("p", {}, "Subtotal: " + fmtPrecio(orden.subtotal)),
-        h("p", {}, "Cargo de servicio: " + fmtPrecio(orden.cargo_servicio)),
-        h("p", {}, h("b", {}, "Total: " + fmtPrecio(orden.total))));
+        imgEvento(orden.imagen_url, 150),
+        h("h2", { style: "margin-top:14px" }, orden.evento_nombre),
+        h("p", { class: "sub" }, `📍 ${orden.venue || ""} · ${orden.ciudad || ""}`),
+        h("p", { class: "sub" }, "🗓️ " + fmtFecha(orden.evento_fecha)),
+        h("div", { class: "lineas" },
+          ...orden.detalle.map(d => linea(`${d.localidad} · ${d.fila}${d.asiento}`, fmtPrecio(d.precio))),
+          linea("Subtotal", fmtPrecio(orden.subtotal)),
+          linea("Cargo de servicio", fmtPrecio(orden.cargo_servicio)),
+          linea("Total", fmtPrecio(orden.total), "total")));
       if (orden.estado !== "PENDIENTE_PAGO") return bloquear("Esta orden está " + orden.estado + ".");
       const fin = new Date(orden.expira_en).getTime();
       clearInterval(timer);
@@ -68,7 +77,7 @@
         const s = Math.floor((fin - Date.now()) / 1000);
         if (s <= 0) return bloquear("La reserva expiró. Vuelve a elegir tus asientos.");
         document.getElementById("cuenta").textContent =
-          `Tus asientos se liberan en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+          `⏱ Tus asientos se liberan en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
       }, 1000);
     }
 
@@ -104,7 +113,6 @@
     });
 
     (async () => {
-      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
       if (!id) return location.href = "/static/eventos.html";
       try { await cargar(); }
       catch (e) { if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error"); }

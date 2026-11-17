@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Usuarios</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e5e7eb; }
+    th { color: #6b7280; font-size: 12px; text-transform: uppercase; }
+    td select { padding: 5px; font-size: 13px; width: auto; }
+    .filtros { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; align-items: end; }
+    .filtros button { margin-top: 0; width: auto; padding: 10px 16px; }
+    .scroll { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:920px">
+    <div class="header"><h1>👥 Usuarios</h1><a href="/static/panel.html">← Volver al panel</a></div>
+    <p class="sub">Cambia roles y estados. Los cambios se guardan al instante.</p>
+
+    <div class="filtros">
+      <div><label>Buscar</label><input id="q" placeholder="correo o nombre"></div>
+      <div><label>Rol</label>
+        <select id="f-rol"><option value="">Todos</option><option>ADMIN</option><option>ORGANIZADOR</option><option>CLIENTE</option><option>VALIDADOR</option></select></div>
+      <div><label>Estado</label>
+        <select id="f-estado"><option value="">Todos</option><option>ACTIVO</option><option>INACTIVO</option><option>BLOQUEADO</option></select></div>
+      <button id="buscar">Buscar</button>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th>Estado</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const ROLES = ["ADMIN", "ORGANIZADOR", "CLIENTE", "VALIDADOR"];
+    const ESTADOS = ["ACTIVO", "INACTIVO", "BLOQUEADO"];
+    const msg = document.getElementById("msg");
+    const tbody = document.getElementById("tbody");
+    let yo = null;
+
+    function celda(texto) {
+      const td = document.createElement("td");
+      td.textContent = texto;
+      return td;
+    }
+
+    function celdaSelect(lista, actual, deshabilitado, alCambiar) {
+      const td = document.createElement("td");
+      const s = document.createElement("select");
+      for (const v of lista) s.add(new Option(v, v));
+      s.value = actual;
+      s.disabled = deshabilitado;
+      s.addEventListener("change", async () => {
+        try {
+          await alCambiar(s.value);
+          actual = s.value;
+          mostrar(msg, "Guardado", "ok");
+        } catch (e) {
+          s.value = actual;
+          mostrar(msg, e.message, "error");
+        }
+      });
+      td.append(s);
+      return td;
+    }
+
+    async function cargar() {
+      const p = new URLSearchParams();
+      for (const [k, id] of [["q", "q"], ["rol", "f-rol"], ["estado", "f-estado"]]) {
+        const v = document.getElementById(id).value.trim();
+        if (v) p.set(k, v);
+      }
+      const usuarios = await api("/usuarios?" + p.toString());
+      tbody.replaceChildren();
+      for (const u of usuarios) {
+        const propio = u.id_usuario === yo.id_usuario;
+        const tr = document.createElement("tr");
+        tr.append(
+          celda(u.email),
+          celda(u.nombre + " " + u.apellido),
+          celdaSelect(ROLES, u.rol, propio, v => api(`/usuarios/${u.id_usuario}/rol`, "PATCH", { rol: v })),
+          celdaSelect(ESTADOS, u.estado, propio, v => api(`/usuarios/${u.id_usuario}/estado`, "PATCH", { estado: v }))
+        );
+        tbody.append(tr);
+      }
+    }
+
+    async function iniciar() {
+      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
+      try {
+        yo = await api("/auth/me");
+        if (yo.rol !== "ADMIN") return location.href = "/static/panel.html";
+        await cargar();
+      } catch (e) {
+        if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error");
+      }
+    }
+
+    document.getElementById("buscar").addEventListener("click", () => cargar().catch(e => mostrar(msg, e.message, "error")));
+    iniciar();
+  </script>
+</body>
+</html>

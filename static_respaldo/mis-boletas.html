@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Mis boletas</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { align-items: flex-start; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; margin-top: 16px; }
+    .tk { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; }
+    .tk h3 { font-size: 16px; color: #1e1b4b; margin: 6px 0 4px; }
+    .tk p { font-size: 13px; color: #4b5563; margin: 3px 0; }
+    .qr { display: block; width: 160px; height: 160px; margin: 10px auto 4px; }
+    .codigo { text-align: center; font-family: ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #111827 !important; }
+    .st { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+    .st.VALIDA { background: #dcfce7; color: #166534; }
+    .st.USADA { background: #e5e7eb; color: #4b5563; }
+    .st.ANULADA { background: #fee2e2; color: #991b1b; }
+    .ord { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:1000px">
+    <div class="header"><h1>🎫 Mis boletas</h1><a href="/static/panel.html">← Panel</a></div>
+    <p class="sub">Presenta el código QR (o el código escrito) en el ingreso del evento.</p>
+    <div id="msg" class="msg"></div>
+    <div id="boletas" class="grid"></div>
+
+    <div class="section">
+      <b>Mis órdenes</b>
+      <div id="ordenes"></div>
+    </div>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const msg = document.getElementById("msg");
+
+    function tarjeta(b) {
+      return h("div", { class: "tk" },
+        imgEvento(b.imagen_url, 110),
+        h("span", { class: "st " + b.estado }, b.estado === "VALIDA" ? "VÁLIDA" : b.estado),
+        h("h3", {}, b.evento_nombre),
+        h("p", {}, `${b.ciudad || ""} · ${b.venue || ""}`),
+        h("p", {}, fmtFecha(b.evento_fecha)),
+        h("p", {}, h("b", {}, `${b.localidad} · Fila ${b.fila} · Asiento ${b.asiento}`)),
+        h("img", { class: "qr", src: b.qr, alt: "Código QR de ingreso" }),
+        h("p", { class: "codigo" }, b.codigo),
+        h("p", { style: "text-align:center" },
+          b.estado === "USADA" ? "Usada el " + fmtFecha(b.usada_en) : "Presenta este código en el ingreso"));
+    }
+
+    async function cargar() {
+      if (!localStorage.getItem("token")) return location.href = "/static/login.html";
+      if (new URLSearchParams(location.search).get("nueva"))
+        mostrar(msg, "¡Pago aprobado! Estas son tus boletas.", "ok");
+      try {
+        const [boletas, ordenes] = await Promise.all([apiOrd("/boletas/mias"), apiOrd("/ordenes/mias")]);
+        const cont = document.getElementById("boletas");
+        cont.replaceChildren(...(boletas.length ? boletas.map(tarjeta)
+          : [h("p", { class: "sub" }, "Aún no tienes boletas compradas.")]));
+        document.getElementById("ordenes").replaceChildren(...(ordenes.length ? ordenes.map(o =>
+          h("div", { class: "ord" },
+            h("span", {}, `${fmtFecha(o.created_at)} · ${o.evento_nombre}`),
+            h("span", {}, `${fmtPrecio(o.total)} · ${o.estado}`,
+              o.estado === "PENDIENTE_PAGO" ? h("a", { href: "/static/pagar.html?orden=" + o.id_orden, style: "margin-left:8px" }, "Pagar") : "")))
+          : [h("p", { class: "sub" }, "Sin órdenes.")]));
+      } catch (e) {
+        if (e.status === 401) cerrarSesion(); else mostrar(msg, e.message, "error");
+      }
+    }
+    cargar();
+  </script>
+</body>
+</html>

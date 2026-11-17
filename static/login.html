@@ -6,21 +6,33 @@
   <title>Ticket Seats - Iniciar sesión</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-  <div class="card">
-    <h1>🎟️ Ticket Seats</h1>
-    <p class="sub">Inicia sesión para continuar</p>
-
-    <form id="form">
-      <label>Correo</label>
-      <input type="email" id="email" required autofocus>
-      <label>Contraseña</label>
-      <input type="password" id="password" required>
-      <button type="submit">Iniciar sesión</button>
-    </form>
-
-    <div id="msg" class="msg"></div>
-    <p class="link">¿No tienes cuenta? <a href="/static/registro.html">Regístrate</a></p>
+<body class="auth">
+  <div class="auth-wrap">
+    <section class="auth-hero">
+      <div class="brand"><span class="logo">🎟️</span><span>Ticket <em>Seats</em></span></div>
+      <h2>Vive cada evento desde el mejor asiento</h2>
+      <p>Elige tu silla, paga en segundos y entra con tu código QR.</p>
+      <ul>
+        <li>🪑 Elige tu asiento exacto en el mapa</li>
+        <li>🎫 Boletas digitales con QR único</li>
+        <li>⚡ Reservas seguras en tiempo real</li>
+      </ul>
+    </section>
+    <section class="auth-form">
+      <div class="auth-card">
+        <h1>Bienvenido 👋</h1>
+        <p class="sub">Inicia sesión para continuar</p>
+        <form id="form">
+          <label>Correo</label>
+          <input type="email" id="email" placeholder="tucorreo@mail.com" required autofocus>
+          <label>Contraseña</label>
+          <input type="password" id="password" placeholder="••••••••" required>
+          <button type="submit" class="btn block">Iniciar sesión</button>
+        </form>
+        <div id="msg" class="msg"></div>
+        <p class="link">¿No tienes cuenta? <a href="/static/registro.html">Regístrate</a></p>
+      </div>
+    </section>
   </div>
 
   <script src="/static/api.js"></script>
@@ -36,6 +48,10 @@
           password: document.getElementById("password").value,
         });
         guardarSesion(res.access_token, res.rol);
+        try {
+          const u = await api("/auth/me");
+          localStorage.setItem("nombre", u.nombre + " " + u.apellido);
+        } catch (e2) {}
         location.href = "/static/panel.html";
       } catch (err) {
         mostrar(msg, err.message, "error");

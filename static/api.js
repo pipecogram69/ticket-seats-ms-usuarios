@@ -1,6 +1,8 @@
-function guardarSesion(token, rol) {
+// ===================== Sesión y peticiones =====================
+function guardarSesion(token, rol, nombre) {
   localStorage.setItem("token", token);
   localStorage.setItem("rol", rol);
+  if (nombre) localStorage.setItem("nombre", nombre); else localStorage.removeItem("nombre");
 }
 
 function cerrarSesion() {
@@ -12,11 +14,9 @@ async function api(path, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   const token = localStorage.getItem("token");
   if (token) headers["Authorization"] = "Bearer " + token;
-
   const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : null });
   let data = null;
   try { data = await r.json(); } catch (e) {}
-
   if (!r.ok) {
     let msg = data && data.detail;
     if (Array.isArray(msg)) msg = msg.map(e => e.msg).join(", ");
@@ -32,22 +32,23 @@ function mostrar(el, texto, tipo) {
   el.className = "msg " + tipo;
 }
 
-// ---------- MS Eventos e Inventario (puerto 8002) ----------
-const EVENTOS_URL = location.protocol + "//" + location.hostname + ":8002";
+// ===================== Otros microservicios =====================
+const EVENTOS_URL = "";
+const ORDENES_URL = "";
+const apiEv = (path, method = "GET", body = null) => api(EVENTOS_URL + path, method, body);
+const apiOrd = (path, method = "GET", body = null) => api(ORDENES_URL + path, method, body);
 
-function apiEv(path, method = "GET", body = null) {
-  return api(EVENTOS_URL + path, method, body);
-}
-
+// ===================== Utilidades de interfaz =====================
 function h(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
     if (k === "class") e.className = v;
     else if (k === "href") e.href = v;
     else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
     else e.setAttribute(k, v);
   }
-  e.append(...kids);
+  for (const k of kids) if (k !== null && k !== undefined && k !== false) e.append(k);
   return e;
 }
 
@@ -59,32 +60,10 @@ function fmtPrecio(n) {
   return "$" + Number(n || 0).toLocaleString("es-CO");
 }
 
-// ---------- Menú del panel: se inyecta solo en panel.html ----------
-document.addEventListener("DOMContentLoaded", () => {
-  const saludo = document.getElementById("saludo");
-  if (!saludo || document.getElementById("menu") || document.getElementById("menu-rol")) return;
-  const rol = localStorage.getItem("rol");
-  const estilo = "background:#7c3aed;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;font-size:14px";
-  const menu = h("div", { id: "menu-rol", style: "display:flex;flex-wrap:wrap;gap:10px;margin:16px 0" },
-    h("a", { href: "/static/eventos.html", style: estilo }, "🎟️ Ver eventos"));
-  if (rol === "ADMIN" || rol === "ORGANIZADOR")
-    menu.append(h("a", { href: "/static/crear-evento.html", style: estilo }, "➕ Crear evento"));
-  if (rol === "ADMIN")
-    menu.append(h("a", { href: "/static/usuarios.html", style: estilo }, "👥 Gestionar usuarios"));
-  saludo.after(menu);
-});
-
-// ---------- Imágenes, órdenes y pagos (MS Órdenes, puerto 8003) ----------
-const ORDENES_URL = location.protocol + "//" + location.hostname + ":8003";
-
-function apiOrd(path, method = "GET", body = null) {
-  return api(ORDENES_URL + path, method, body);
-}
-
-function imgEvento(url, alto = 140) {
-  const base = `width:100%;height:${alto}px;border-radius:8px;margin-bottom:8px;`;
-  if (url) return h("img", { src: EVENTOS_URL + url, alt: "Imagen del evento", style: base + "object-fit:cover;display:block" });
-  return h("div", { style: base + "background:linear-gradient(135deg,#4c1d95,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:32px" }, "🎟️");
+function imgEvento(url, alto = 150) {
+  const estilo = `height:${alto}px`;
+  if (url) return h("img", { class: "ev-img", src: EVENTOS_URL + url, alt: "Imagen del evento", style: estilo });
+  return h("div", { class: "ev-img ph", style: estilo }, "🎟️");
 }
 
 async function subirImagen(idEvento, archivo) {
@@ -99,54 +78,69 @@ async function subirImagen(idEvento, archivo) {
   return data;
 }
 
+function tarjetaEvento(e) {
+  return h("a", { class: "ev", href: "/static/evento.html?id=" + e.id_evento },
+    imgEvento(e.imagen_url, 150),
+    h("div", { class: "ev-body" },
+      h("div", { class: "tags" },
+        h("span", { class: "tag" }, e.ciudad || "—"),
+        h("span", { class: "tag alt" }, "Shard " + e.id_shard)),
+      h("h3", {}, e.nombre),
+      h("p", { class: "meta" }, "📍 " + (e.venue || "")),
+      h("p", { class: "meta" }, "🗓️ " + fmtFecha(e.fecha_inicio)),
+      h("div", { class: "ev-foot" },
+        h("span", { class: "precio" }, "Desde " + fmtPrecio(e.precio_desde)),
+        h("span", { class: "disp" }, e.disponibles + " disp."))));
+}
+
+// ===================== Menú lateral (páginas con body.app) =====================
+const NAV = [
+  ["/static/panel.html", "🏠", "Inicio", null],
+  ["/static/eventos.html", "🎟️", "Eventos", null],
+  ["/static/crear-evento.html", "➕", "Crear evento", ["ADMIN", "ORGANIZADOR"]],
+  ["/static/mis-boletas.html", "🎫", "Mis boletas", ["CLIENTE", "ADMIN"]],
+  ["/static/validar.html", "✅", "Validar ingreso", ["VALIDADOR", "ADMIN"]],
+  ["/static/usuarios.html", "👥", "Usuarios", ["ADMIN"]],
+];
+
 document.addEventListener("DOMContentLoaded", () => {
-  const menu = document.getElementById("menu") || document.getElementById("menu-rol");
-  if (!menu || menu.dataset.extra) return;
-  menu.dataset.extra = "1";
-  const rol = localStorage.getItem("rol");
-  const estilo = "background:#7c3aed;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;font-size:14px";
-  if (rol === "CLIENTE" || rol === "ADMIN")
-    menu.append(h("a", { href: "/static/mis-boletas.html", style: estilo }, "🎫 Mis boletas"));
-  if (rol === "VALIDADOR" || rol === "ADMIN")
-    menu.append(h("a", { href: "/static/validar.html", style: estilo }, "✅ Validar ingreso"));
-});
+  if (!document.body.classList.contains("app")) return;
+  if (!localStorage.getItem("token")) { location.href = "/static/login.html"; return; }
+  const main = document.querySelector("main.main");
+  if (!main) return;
 
-// ---------- Panel: próximos eventos (reemplaza el mensaje de rol) ----------
-document.addEventListener("DOMContentLoaded", async () => {
-  const mensajeRol = document.getElementById("contenido-rol");
-  if (!mensajeRol || document.getElementById("proximos")) return;
-  mensajeRol.style.display = "none";
+  const rol = localStorage.getItem("rol") || "";
+  const ruta = location.pathname;
+  const nombre = localStorage.getItem("nombre") || "Mi cuenta";
+  const avatar = h("div", { class: "avatar" }, nombre.charAt(0).toUpperCase());
+  const quien = h("b", {}, nombre);
 
-  const lista = h("div", { style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px" });
-  const caja = h("div", { id: "proximos", class: "section" },
-    h("h2", { style: "font-size:18px;color:#1e1b4b;margin-bottom:10px" }, "📅 Próximos eventos"),
-    lista);
-  mensajeRol.after(caja);
+  const enlaces = NAV.filter(n => !n[3] || n[3].includes(rol)).map(([href, ico, txt]) =>
+    h("a", { href, class: ruta === href ? "act" : "" }, h("span", { class: "ico" }, ico), txt));
 
-  try {
-    const proximos = (await apiEv("/eventos"))
-      .filter(e => new Date(e.fecha_inicio) > new Date())
-      .slice(0, 6);
+  const side = h("aside", { class: "side" },
+    h("a", { class: "brand", href: "/static/panel.html" },
+      h("span", { class: "logo" }, "🎟️"), h("span", {}, "Ticket ", h("em", {}, "Seats"))),
+    h("nav", { class: "side-nav" }, ...enlaces),
+    h("div", { class: "side-user" },
+      h("div", { class: "fila-u" }, avatar, h("div", { class: "who" }, quien, h("small", {}, rol))),
+      h("button", { class: "salir", onclick: cerrarSesion }, "Cerrar sesión")));
 
-    if (!proximos.length) {
-      lista.replaceWith(h("p", { class: "sub" }, "Todavía no hay eventos próximos."));
-      return;
-    }
+  document.body.prepend(h("div", { class: "shell" }, side, main));
 
-    for (const e of proximos) {
-      lista.append(h("a", {
-          href: "/static/evento.html?id=" + e.id_evento,
-          style: "display:block;text-decoration:none;color:inherit;border:1px solid #e5e7eb;border-radius:10px;padding:10px"
-        },
-        imgEvento(e.imagen_url, 90),
-        h("div", { style: "font-weight:700;font-size:14px;color:#1e1b4b" }, e.nombre),
-        h("div", { style: "font-size:12px;color:#6b7280;margin-top:2px" }, fmtFecha(e.fecha_inicio)),
-        h("div", { style: "font-size:12px;color:#6b7280" }, (e.ciudad || "") + (e.venue ? " · " + e.venue : "")),
-        h("div", { style: "font-size:12px;color:#5b21b6;font-weight:600;margin-top:4px" }, "Desde " + fmtPrecio(e.precio_desde))));
-    }
-    caja.append(h("p", { style: "margin-top:12px;font-size:14px" },
-      h("a", { href: "/static/eventos.html" }, "Ver todos los eventos →")));
-  } catch (err) {
-    lista.replaceWith(h("p", { class: "sub" }, "No se pudieron cargar los eventos."));
+  if (!localStorage.getItem("nombre")) {
+    api("/auth/me").then(u => {
+      const n = u.nombre + " " + u.apellido;
+      localStorage.setItem("nombre", n);
+      quien.textContent = n;
+      avatar.textContent = n.charAt(0).toUpperCase();
+    }).catch(() => {});
   }
 });
+
+// ---------- Entradas de menú: Mis eventos y Mis reservas ----------
+if (typeof NAV !== "undefined" && !NAV.some(n => n[0].includes("mis-eventos"))) {
+  NAV.splice(3, 0,
+    ["/static/mis-eventos.html", "📊", "Mis eventos", ["ADMIN", "ORGANIZADOR"]],
+    ["/static/mis-reservas.html", "📌", "Mis reservas", ["CLIENTE", "ADMIN"]]);
+}

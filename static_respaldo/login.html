@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Iniciar sesión</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="card">
+    <h1>🎟️ Ticket Seats</h1>
+    <p class="sub">Inicia sesión para continuar</p>
+
+    <form id="form">
+      <label>Correo</label>
+      <input type="email" id="email" required autofocus>
+      <label>Contraseña</label>
+      <input type="password" id="password" required>
+      <button type="submit">Iniciar sesión</button>
+    </form>
+
+    <div id="msg" class="msg"></div>
+    <p class="link">¿No tienes cuenta? <a href="/static/registro.html">Regístrate</a></p>
+  </div>
+
+  <script src="/static/api.js"></script>
+  <script>
+    if (localStorage.getItem("token")) location.href = "/static/panel.html";
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("msg");
+      try {
+        const res = await api("/auth/login", "POST", {
+          email: document.getElementById("email").value,
+          password: document.getElementById("password").value,
+        });
+        guardarSesion(res.access_token, res.rol);
+        location.href = "/static/panel.html";
+      } catch (err) {
+        mostrar(msg, err.message, "error");
+      }
+    });
+  </script>
+</body>
+</html>

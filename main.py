@@ -15,7 +15,9 @@ from security import create_token, decode_token, hash_password, verify_password
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_pool()
+    tarea = asyncio.create_task(expirar_reservas())
     yield
+    tarea.cancel()
     await db.close_pool()
 
 
@@ -234,3 +236,167 @@ async def sin_cache_estaticos(request, call_next):
     if request.url.path.startswith("/static"):
         resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+# ---------- Reservas ----------
+import asyncio
+from decimal import Decimal
+
+import httpx
+
+from config import EVENTOS_URL
+
+
+class BoletaVersion(BaseModel):
+    id_boleta: int
+    version: int
+
+
+class ReservaIn(BaseModel):
+    id_evento: UUID
+    boletas: list[BoletaVersion] = Field(min_length=1, max_length=20)
+
+
+class NotificarIn(BaseModel):
+    id_evento: UUID
+    estado: Literal["CONVERTIDA", "CANCELADA"]
+
+
+async def ctx(cred: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
+    payload = await usuario_actual(cred)
+    payload["token"] = cred.credentials          # se reenvía al MS de eventos
+    return payload
+
+
+def con_roles(*roles: str):
+    async def checker(user: dict = Depends(ctx)):
+        if user["rol"] not in roles:
+            raise HTTPException(403, "No tienes permisos para esta acción")
+        return user
+    return checker
+
+
+async def llamar_eventos(metodo: str, ruta: str, token: str | None = None, cuerpo: dict | None = None):
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.request(metodo, EVENTOS_URL + ruta, headers=headers, json=cuerpo)
+    except httpx.HTTPError:
+        raise HTTPException(502, "No se pudo contactar al servicio de eventos")
+    if r.status_code >= 400:
+        try:
+            detalle = r.json().get("detail")
+        except Exception:
+            detalle = None
+        if not isinstance(detalle, str):
+            detalle = "Error en el servicio de eventos"
+        raise HTTPException(r.status_code if r.status_code in (401, 403, 404, 409, 422) else 502, detalle)
+    return r.json()
+
+
+def a_fecha(texto: str) -> datetime:
+    dt = datetime.fromisoformat(texto)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+async def expirar_reservas():
+    while True:
+        try:
+            async with db.get_pool().acquire() as conn:
+                await conn.execute(
+                    """UPDATE reserva SET estado = 'EXPIRADA', updated_at = now()
+                       WHERE estado = 'ACTIVA' AND expira_en < now()""")
+        except Exception as e:
+            print("[reservas] expiración:", e)
+        await asyncio.sleep(60)
+
+
+@app.post("/reservas", status_code=201)
+async def crear_reserva(data: ReservaIn, user=Depends(con_roles("CLIENTE", "ADMIN"))):
+    res = await llamar_eventos("POST", "/inventario/reservar", user["token"], {
+        "id_evento": str(data.id_evento),
+        "boletas": [b.model_dump() for b in data.boletas]})
+    ev = await llamar_eventos("GET", f"/eventos/{data.id_evento}")
+    async with db.get_pool().acquire() as conn:
+        async with conn.transaction():
+            id_reserva = await conn.fetchval(
+                """INSERT INTO reserva (id_usuario, id_evento, evento_nombre, evento_fecha, venue, ciudad,
+                          imagen_url, subtotal, cargo_servicio, total, expira_en)
+                   VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id_reserva""",
+                user["sub"], data.id_evento, ev["nombre"], a_fecha(ev["fecha_inicio"]), ev.get("venue"),
+                ev.get("ciudad"), ev.get("imagen_url"), Decimal(str(res["subtotal"])),
+                Decimal(str(res["cargo_servicio"])), Decimal(str(res["total"])), a_fecha(res["expira_en"]))
+            await conn.executemany(
+                """INSERT INTO reserva_detalle (id_reserva, id_boleta, localidad, fila, asiento, precio)
+                   VALUES ($1, $2, $3, $4, $5, $6)""",
+                [(id_reserva, r["id_boleta"], r["localidad"], r["fila"], r["asiento"], Decimal(str(r["precio"])))
+                 for r in res["reservadas"]])
+    return {**res, "id_reserva": str(id_reserva)}
+
+
+@app.get("/reservas/mias")
+async def mis_reservas(user=Depends(con_roles("CLIENTE", "ADMIN"))):
+    async with db.get_pool().acquire() as conn:
+        rs = await conn.fetch(
+            """SELECT id_reserva, id_evento, evento_nombre, evento_fecha, venue, ciudad, imagen_url,
+                      subtotal, cargo_servicio, total, expira_en, created_at,
+                      CASE WHEN estado = 'ACTIVA' AND expira_en < now() THEN 'EXPIRADA' ELSE estado END AS estado
+               FROM reserva WHERE id_usuario = $1::uuid ORDER BY created_at DESC LIMIT 50""", user["sub"])
+        ds = await conn.fetch(
+            """SELECT id_reserva, id_boleta, localidad, fila, asiento, precio
+               FROM reserva_detalle WHERE id_reserva = ANY($1::uuid[]) ORDER BY id_detalle""",
+            [r["id_reserva"] for r in rs])
+    por: dict = {}
+    for d in ds:
+        por.setdefault(d["id_reserva"], []).append(dict(d))
+    return [{**dict(r), "detalle": por.get(r["id_reserva"], [])} for r in rs]
+
+
+@app.post("/reservas/notificar")
+async def notificar(data: NotificarIn, user=Depends(con_roles("CLIENTE", "ADMIN"))):
+    """Lo llama el MS de órdenes cuando una reserva se paga (CONVERTIDA) o se cancela."""
+    async with db.get_pool().acquire() as conn:
+        n = await conn.fetchval(
+            """WITH x AS (UPDATE reserva SET estado = $3, updated_at = now()
+                          WHERE id_usuario = $1::uuid AND id_evento = $2 AND estado = 'ACTIVA' RETURNING 1)
+               SELECT count(*) FROM x""", user["sub"], data.id_evento, data.estado)
+    return {"actualizadas": n}
+
+
+@app.post("/reservas/{id_reserva}/cancelar")
+async def cancelar_reserva(id_reserva: UUID, user=Depends(con_roles("CLIENTE", "ADMIN"))):
+    async with db.get_pool().acquire() as conn:
+        r = await conn.fetchrow(
+            "SELECT id_usuario::text AS u, id_evento, estado FROM reserva WHERE id_reserva = $1", id_reserva)
+        if not r:
+            raise HTTPException(404, "Reserva no encontrada")
+        if r["u"] != user["sub"]:
+            raise HTTPException(403, "Esta reserva no es tuya")
+        if r["estado"] != "ACTIVA":
+            raise HTTPException(409, f"La reserva está {r['estado']}")
+        ids = [x["id_boleta"] for x in await conn.fetch(
+            "SELECT id_boleta FROM reserva_detalle WHERE id_reserva = $1", id_reserva)]
+    try:       # si ya expiró, el MS de eventos ya liberó los asientos
+        await llamar_eventos("POST", "/inventario/liberar", user["token"],
+                             {"id_evento": str(r["id_evento"]), "ids": ids})
+    except HTTPException:
+        pass
+    async with db.get_pool().acquire() as conn:
+        await conn.execute(
+            "UPDATE reserva SET estado = 'CANCELADA', updated_at = now() WHERE id_reserva = $1 AND estado = 'ACTIVA'",
+            id_reserva)
+    return {"estado": "CANCELADA"}
+
+
+# ---------- Configuración pública para el navegador ----------
+import json
+import os
+
+from fastapi.responses import Response
+
+
+@app.get("/config.js", include_in_schema=False)
+async def config_js():
+    cfg = {"eventos": os.getenv("EVENTOS_PUBLIC_URL", ""), "ordenes": os.getenv("ORDENES_PUBLIC_URL", "")}
+    return Response("window.TS_CONFIG = " + json.dumps(cfg) + ";",
+                    media_type="application/javascript", headers={"Cache-Control": "no-store"})

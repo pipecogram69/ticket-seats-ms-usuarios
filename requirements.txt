@@ -4,3 +4,4 @@ asyncpg
 bcrypt
 PyJWT
 pydantic[email]
+httpx

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Seats - Editar evento</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app">
+  <main class="main">
+    <div class="page-head">
+      <a class="volver" href="/static/mis-eventos.html">← Volver a mis eventos</a>
+      <h1 id="titulo">Editar evento</h1>
+      <p class="sub">Las localidades y los asientos no se pueden cambiar una vez creado el evento.</p>
+    </div>
+
+    <form id="form" class="cols">
+      <section class="box">
+        <h2>Datos del evento</h2>
+        <label>Nombre</label>
+        <input id="nombre" required minlength="3">
+        <label>Descripción</label>
+        <input id="descripcion">
+        <label>Fecha y hora</label>
+        <input type="datetime-local" id="fecha" required>
+        <label>Cambiar imagen (JPG, PNG o WEBP, máx. 3 MB)</label>
+        <input type="file" id="imagen" accept="image/jpeg,image/png,image/webp">
+        <div id="actual" style="margin-top:10px"></div>
+      </section>
+
+      <section class="box">
+        <h2>Condiciones comerciales</h2>
+        <div class="row">
+          <div><label>Máx. boletas por compra</label><input type="number" id="maxb" min="1" max="20"></div>
+          <div><label>Minutos de reserva</label><input type="number" id="mins" min="1" max="60"></div>
+        </div>
+        <div class="row">
+          <div><label>Cargo de servicio (%)</label><input type="number" id="cargo" min="0" max="100" step="0.01"></div>
+          <div><label>Permite devolución</label>
+            <select id="devolucion"><option value="false">No</option><option value="true">Sí</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Inicio de la venta (opcional)</label><input type="datetime-local" id="iniciov"></div>
+          <div><label>Fin de la venta (opcional)</label><input type="datetime-local" id="finv"></div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button type="submit" class="btn block" id="guardar">Guardar cambios</button>
+        <div id="msg" class="msg"></div>
+      </div>
+    </form>
+  </main>
+
+  <script src="/static/api.js"></script>
+  <script>
+    const id = new URLSearchParams(location.search).get("id");
+    const msg = document.getElementById("msg");
+    const $ = (x) => document.getElementById(x);
+    const norm = (x) => String(Number(x));
+    const aIso = (v) => v ? new Date(v).toISOString() : null;
+    let orig = {};
+
+    function aLocal(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      return d.toISOString().slice(0, 16);
+    }
+
+    async function iniciar() {
+      if (!id) return location.href = "/static/mis-eventos.html";
+      if (!["ORGANIZADOR", "ADMIN"].includes(localStorage.getItem("rol"))) return location.href = "/static/panel.html";
+      try {
+        const e = await apiEv("/eventos/" + id);
+        const c = e.condiciones || {};
+        $("titulo").textContent = "Editar: " + e.nombre;
+        $("actual").replaceChildren(imgEvento(e.imagen_url, 140));
+        orig = {
+          nombre: e.nombre, descripcion: e.descripcion || "", fecha: aLocal(e.fecha_inicio),
+          maxb: norm(c.max_boletas_por_compra ?? 6), mins: norm(c.minutos_reserva ?? 10),
+          cargo: norm(c.cargo_servicio_pct ?? 0), devolucion: String(!!c.permite_devolucion),
+          iniciov: aLocal(c.inicio_venta), finv: aLocal(c.fin_venta),
+        };
+        for (const k of Object.keys(orig)) $(k).value = orig[k];
+        if (["CANCELADO", "FINALIZADO"].includes(e.estado)) {
+          document.querySelectorAll("#form input, #form select, #form button").forEach(x => x.disabled = true);
+          mostrar(msg, "Un evento " + e.estado + " ya no se puede editar.", "error");
+        }
+      } catch (err) {
+        if (err.status === 401) cerrarSesion(); else mostrar(msg, err.message, "error");
+      }
+    }
+
+    $("form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const v = {};
+      for (const k of Object.keys(orig)) v[k] = $(k).value;
+      const cambios = {};
+      if (v.nombre.trim() !== orig.nombre) cambios.nombre = v.nombre.trim();
+      if (v.descripcion.trim() !== orig.descripcion) cambios.descripcion = v.descripcion.trim() || null;
+      if (v.fecha !== orig.fecha) cambios.fecha_inicio = aIso(v.fecha);
+      if (norm(v.maxb) !== orig.maxb) cambios.max_boletas_por_compra = Number(v.maxb);
+      if (norm(v.mins) !== orig.mins) cambios.minutos_reserva = Number(v.mins);
+      if (norm(v.cargo) !== orig.cargo) cambios.cargo_servicio_pct = Number(v.cargo);
+      if (v.devolucion !== orig.devolucion) cambios.permite_devolucion = v.devolucion === "true";
+      if (v.iniciov !== orig.iniciov) cambios.inicio_venta = aIso(v.iniciov);
+      if (v.finv !== orig.finv) cambios.fin_venta = aIso(v.finv);
+      const archivo = $("imagen").files[0];
+      if (!Object.keys(cambios).length && !archivo) return mostrar(msg, "No hay cambios para guardar.", "error");
+      $("guardar").disabled = true;
+      try {
+        if (Object.keys(cambios).length) await apiEv("/eventos/" + id, "PATCH", cambios);
+        if (archivo) await subirImagen(id, archivo);
+        mostrar(msg, "Cambios guardados. Volviendo...", "ok");
+        setTimeout(() => location.href = "/static/mis-eventos.html", 1200);
+      } catch (err) {
+        mostrar(msg, err.message, "error");
+        $("guardar").disabled = false;
+      }
+    });
+
+    iniciar();
+  </script>
+</body>
+</html>
