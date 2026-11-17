@@ -33,8 +33,8 @@ function mostrar(el, texto, tipo) {
 }
 
 // ===================== Otros microservicios =====================
-const EVENTOS_URL = "";
-const ORDENES_URL = "";
+const EVENTOS_URL = window.TS_CONFIG?.eventos || "";
+const ORDENES_URL = window.TS_CONFIG?.ordenes || "";
 const apiEv = (path, method = "GET", body = null) => api(EVENTOS_URL + path, method, body);
 const apiOrd = (path, method = "GET", body = null) => api(ORDENES_URL + path, method, body);
 
