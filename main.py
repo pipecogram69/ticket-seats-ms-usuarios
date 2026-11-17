@@ -22,6 +22,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MS Usuarios - Autenticación", lifespan=lifespan)
+
+@app.get("/health", include_in_schema=False)
+async def health():
+    return {"status": "ok"}
+
 bearer = HTTPBearer()
 
 
