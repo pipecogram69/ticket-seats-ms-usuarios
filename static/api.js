@@ -62,7 +62,7 @@ function fmtPrecio(n) {
 
 function imgEvento(url, alto = 150) {
   const estilo = `height:${alto}px`;
-  if (url) return h("img", { class: "ev-img", src: EVENTOS_URL + url, alt: "Imagen del evento", style: estilo });
+  if (url) return h("img", { class: "ev-img", src: /^https?:\/\//i.test(url) ? url : EVENTOS_URL + url, alt: "Imagen del evento", style: estilo });
   return h("div", { class: "ev-img ph", style: estilo }, "🎟️");
 }
 
